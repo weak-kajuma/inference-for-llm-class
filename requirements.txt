@@ -1,9 +1,2 @@
 transformers
-torch
-accelerate
-fastapi
-uvicorn
-openai
-rich
 datasets
-torchao

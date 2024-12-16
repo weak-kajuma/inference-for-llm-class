@@ -10,27 +10,16 @@ PROMPT_FORMAT = """以下は、タスクを説明する指示です。要求を�
 ### 応答:
 """
 
-ENSEMBLE_FORMAT = """以下は、タスクを説明する指示です。要求を適切に満たす応答を書きなさい。
+CHOSE_FORMAT = """以下は、タスクを説明する指示です。要求を適切に満たす応答を書きなさい。
 
 ### 指示:
-質問と3つの回答案を与えるので、それらを元に最も優れた回答を作成してください。複数の回答案を元にしていることを悟られずに、回答のみ応答してください。
-質問: {}
-回答案1: {}
-回答案2: {}
-回答案3: {}
- 
-### 応答:
-"""
+以下の問題と2つの回答を読み、より良い回答を選択してください。
+問題: {}
+回答1: {}
+回答2: {}
 
-ENSEMBLE_2_FORMAT = """以下は、タスクを説明する指示です。要求を適切に満たす応答を書きなさい。
+出力は必ず1または2です。
 
-### 指示:
-質問と3つの回答案を与えます。それらのうち最も優れた回答を元により優れた回答を作成してください。回答のみ応答してください。
-質問: {}
-回答案1: {}
-回答案2: {}
-回答案3: {}
- 
 ### 応答:
 """
 
@@ -43,18 +32,29 @@ def generate(weights, inputs, max_length) -> str:
     )
     text = ""
     for token in it:
-        print(token, end="")
+        # print(token, end="")
         text += token
-    print()
     return text.strip()
+
+def chose(weights, question, outputs) ->int:
+    input_prompt = CHOSE_FORMAT.format(question, outputs[0], outputs[1])
+    try:
+        output_number = generate(weights, input_prompt, 1)
+        print(output_number)
+        output_number = int(output_number) - 1
+    except Exception as e:
+        return chose(weights, question, outputs)
+    if not output_number in [0,1]:
+        return chose(weights, question, outputs)
+    return output_number
 
 def answer_function(item, weights, max_length):
     input_prompt = PROMPT_FORMAT.format(item["input"])
-    output1 = generate(weights, input_prompt, max_length)
-    output2 = generate(weights, input_prompt, max_length)
-    output3 = generate(weights, input_prompt, max_length)
-    emsemble_prompt = ENSEMBLE_2_FORMAT.format(item["input"], output1, output2, output3)
-    item["output"] = generate(weights, emsemble_prompt, max_length)
+    outputs = ["", ""]
+    outputs[0] = generate(weights, input_prompt, max_length)
+    outputs[1] = generate(weights, input_prompt, max_length)
+    output_number = chose(weights, item["input"], outputs)
+    item["output"] = outputs[output_number]
     return item
 
 
@@ -66,7 +66,7 @@ def main():
     parser.add_argument("--model", type=str, required=True, default="./model.gguf")
     parser.add_argument("--max_length", type=int, default=1024)
     parser.add_argument("--context_length", type=int, default=2048)
-    parser.add_argument("--ngl", type=int, default=0)
+    parser.add_argument("--ngl", type=int, default=-1)
     parser.add_argument("--repetition_penalty", type=float, default=1.0)
     parser.add_argument("--flash_attn", action="store_true", default=False)
     parser.add_argument("--data_file", type=str, required=True)
@@ -79,7 +79,6 @@ def main():
         flash_attn=args.flash_attn
     )
 
-    # ds = load_dataset("json", data_files=args.data_file, split="train").filter(lambda example, idx: idx % 100 == 0, with_indices=True)
     ds = load_dataset("json", data_files=args.data_file, split="train")
     ds = ds.map(lambda item: answer_function(item, weights, args.max_length))
     ds.to_json("output.jsonl", force_ascii=False)
